@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PMTiles + Custom DEM Terrain</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@5.7.3/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.7.3/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.0.0/dist/index.js"></script>
+  <style>
+    body, html, #map { margin: 0; height: 100%; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    (async () => {
+      // --- PMTiles setup ---
+      const pmtilesArchive = new window.pmtiles.PMTiles("http://localhost/20250915.pmtiles");
+      const protocol = new window.pmtiles.Protocol();
+      maplibregl.addProtocol("pmtiles", protocol.tile);
+
+      const metadata = await pmtilesArchive.getMetadata();
+      console.log("PMTiles metadata:", metadata);
+
+      // --- Map setup ---
+      const map = new maplibregl.Map({
+        container: "map",
+        style: {
+          version: 8,
+          glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+          sources: {
+            "osm-pmtiles": {
+              type: "vector",
+              url: "pmtiles://http://localhost/20250915.pmtiles"
+            },
+            "custom-dem": {
+              type: "raster-dem",
+              url: "http://localhost/TileJSON.json",   // <-- your TileJSON.json
+              tileSize: 256,                          // must match rio-rgbify tiles
+              maxzoom: 15
+            }
+          },
+          layers: [
+            // --- basemap from pmtiles ---
+            {
+              id: "water",
+              type: "fill",
+              source: "osm-pmtiles",
+              "source-layer": "water",
+              paint: { "fill-color": "#a0c8f0" }
+            },
+            {
+              id: "land",
+              type: "fill",
+              source: "osm-pmtiles",
+              "source-layer": "earth",
+              paint: { "fill-color": "#d8e8c8" }
+            },
+            {
+              id: "roads",
+              type: "line",
+              source: "osm-pmtiles",
+              "source-layer": "roads",
+              paint: { "line-color": "#888", "line-width": 1 }
+            },
+            {
+              id: "places-labels",
+              type: "symbol",
+              source: "osm-pmtiles",
+              "source-layer": "places",
+              layout: {
+                "text-field": "{name}",
+                "text-size": 12
+              },
+              paint: { "text-color": "#333" }
+            },
+            // --- 3D buildings ---
+            {
+              id: "3d-buildings",
+              type: "fill-extrusion",
+              source: "osm-pmtiles",
+              "source-layer": "buildings",
+              paint: {
+                "fill-extrusion-color": "#aaa",
+                "fill-extrusion-height": [
+                  "interpolate", ["linear"], ["zoom"],
+                  15, ["get", "height"],
+                  20, ["get", "height"]
+                ],
+                "fill-extrusion-base": ["get", "min_height"],
+                "fill-extrusion-opacity": 0.7
+              }
+            },
+            // --- Hillshade for DEM (visual debug) ---
+            {
+              id: "hillshade",
+              type: "hillshade",
+              source: "custom-dem",
+              paint: {
+                "hillshade-shadow-color": "#473B24",
+                "hillshade-highlight-color": "#fff",
+                "hillshade-exaggeration": 0.8
+              }
+            }
+          ],
+          terrain: {
+            source: "custom-dem",
+            exaggeration: 2.0
+          }
+        },
+        center: [89.5, 22.5], // from your TileJSON
+        zoom: 10,
+        pitch: 65,
+        bearing: -20
+      });
+
+      // controls
+      map.on("load", () => {
+        map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
+        map.addControl(new maplibregl.TerrainControl({ source: "custom-dem", exaggeration: 2.0 }));
+      });
+
+      // debug tile errors
+      map.on("tileerror", (e) => console.warn("Tile error", e));
+    })();
+  </script>
+</body>
+</html>
